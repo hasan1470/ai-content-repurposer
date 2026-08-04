@@ -19,8 +19,8 @@ export async function generateMetadata(): Promise<Metadata> {
     title,
     description,
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
-    openGraph: { title, description, type: "website", images: [{ url: new URL("/og.png", baseUrl).toString(), width: 1536, height: 1024, alt: "Recast AI turns one idea into content for every channel" }] },
-    twitter: { card: "summary_large_image", title, description, images: [new URL("/og.png", baseUrl).toString()] },
+    openGraph: { title, description, type: "website", images: [{ url: new URL("/og-v2.png", baseUrl).toString(), width: 1536, height: 1024, alt: "Recast AI turns one idea into content for every channel" }] },
+    twitter: { card: "summary_large_image", title, description, images: [new URL("/og-v2.png", baseUrl).toString()] },
   };
 }
 

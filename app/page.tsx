@@ -1,125 +1,66 @@
 "use client";
 
 import {
-  Archive,
-  ArrowRight,
-  BarChart3,
-  BriefcaseBusiness,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  Clipboard,
-  Clock3,
-  Copy,
-  Download,
-  FileText,
-  Hash,
-  Image,
-  LayoutGrid,
-  Mail,
-  Menu,
-  MessageCircle,
-  MoreHorizontal,
-  Plus,
-  RotateCcw,
-  Search,
-  Settings,
-  Sparkles,
-  WandSparkles,
-  X,
-  Video,
+  Archive, ArrowRight, BarChart3, BriefcaseBusiness, CalendarDays, Check, ChevronDown,
+  Clipboard, Clock3, Copy, Download, FileText, Hash, Image, LayoutGrid, Mail, Menu,
+  MessageCircle, MoreHorizontal, Plus, RotateCcw, Search, Settings, Sparkles, Trash2,
+  WandSparkles, X, Video,
 } from "lucide-react";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useState } from "react";
 
 type OutputKey = "linkedin" | "xThread" | "newsletter" | "summary" | "instagram";
 type Tone = "Professional" | "Conversational" | "Bold" | "Educational";
+type View = "studio" | "content" | "calendar" | "performance";
 type GeneratedContent = Record<OutputKey, string>;
-
+type CalendarItem = { day: string; channel: string; format: string; idea: string; status: "Ready" | "Draft" };
 type Project = {
-  id: string;
-  title: string;
-  source: string;
-  updatedAt: string;
-  outputs: GeneratedContent;
+  id: string; title: string; source: string; sourceType: "article" | "transcript"; tone: Tone;
+  audience: string; updatedAt: string; outputs: GeneratedContent; calendar: CalendarItem[];
 };
+type Preferences = { tone: Tone; audience: string; generationMode: "auto" | "local" };
 
-type CalendarItem = {
-  day: string;
-  channel: string;
-  format: string;
-  idea: string;
-  status: "Ready" | "Draft";
-};
-
+const blankOutputs: GeneratedContent = { linkedin: "", xThread: "", newsletter: "", summary: "", instagram: "" };
 const sampleTitle = "The quiet advantage of building a content system";
 const sampleSource = `Most creators do not have an idea problem. They have a distribution problem. A strong article is published once, shared once, and then forgotten while the creator rushes toward the next deadline.
 
 The better approach is to treat every substantial piece of content as a source asset. One thoughtful article can become a LinkedIn post, a short thread, a newsletter, a carousel outline, and a week of conversation starters. The goal is not to copy and paste the same words everywhere. The goal is to preserve the central insight while adapting the framing, rhythm, and call to action for each channel.
 
-A useful content system has three parts: capture the strongest ideas, match each idea to the right format, and schedule distribution while the source is still relevant. This reduces the pressure to create from scratch and gives your best thinking more chances to reach the right people.
-
-Consistency becomes easier when repurposing is part of the writing process instead of an afterthought. Create once, shape with intention, and distribute with confidence.`;
-
-const stopWords = new Set(
-  "the a an and or but if then than to of in on for with from as at by is are was were be been being it its this that these those you your we our they their can could should would will into about after before while not do does did have has had more most one every same right".split(" "),
-);
-
+A useful content system has three parts: capture the strongest ideas, match each idea to the right format, and schedule distribution while the source is still relevant. This reduces the pressure to create from scratch and gives your best thinking more chances to reach the right people.`;
+const stopWords = new Set("the a an and or but if then than to of in on for with from as at by is are was were be been being it its this that these those you your we our they their can could should would will into about after before while not do does did have has had more most one every same right".split(" "));
 const outputLabels: Record<OutputKey, { label: string; icon: typeof BriefcaseBusiness }> = {
-  linkedin: { label: "LinkedIn", icon: BriefcaseBusiness },
-  xThread: { label: "X thread", icon: MessageCircle },
-  newsletter: { label: "Newsletter", icon: Mail },
-  summary: { label: "Summary", icon: FileText },
-  instagram: { label: "Instagram", icon: Image },
+  linkedin: { label: "LinkedIn", icon: BriefcaseBusiness }, xThread: { label: "X thread", icon: MessageCircle },
+  newsletter: { label: "Newsletter", icon: Mail }, summary: { label: "Summary", icon: FileText }, instagram: { label: "Instagram", icon: Image },
 };
+const defaultPreferences: Preferences = { tone: "Professional", audience: "Creators & marketers", generationMode: "auto" };
 
-function getSentences(text: string) {
-  return text
-    .replace(/\s+/g, " ")
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length > 28);
+function sentences(text: string) {
+  return text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).map((item) => item.trim()).filter((item) => item.length > 28);
 }
-
-function getKeywords(text: string) {
+function keywords(text: string) {
   const counts = new Map<string, number>();
-  text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .split(/\s+/)
-    .filter((word) => word.length > 4 && !stopWords.has(word))
+  text.toLowerCase().replace(/[^a-z0-9\s-]/g, "").split(/\s+/).filter((word) => word.length > 4 && !stopWords.has(word))
     .forEach((word) => counts.set(word, (counts.get(word) ?? 0) + 1));
-
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([word]) => word);
+  return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([word]) => word);
 }
+function titleCase(value: string) { return value.replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 
-function titleCase(value: string) {
-  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function createOutputs(source: string, title: string, tone: Tone, audience: string): GeneratedContent {
-  const sentences = getSentences(source);
-  const keywords = getKeywords(source);
-  const first = sentences[0] ?? "Your best content deserves more than one moment of attention.";
-  const points = [sentences[1], sentences[2], sentences[3]].filter(Boolean);
-  const topic = title || titleCase(keywords.slice(0, 3).join(" ")) || "A better content workflow";
-  const hook = tone === "Bold"
-    ? `Stop creating content that disappears after one post.`
-    : tone === "Educational"
-      ? `Here is a practical way to get more value from every idea you publish.`
-      : tone === "Conversational"
-        ? `A small content habit has completely changed how I think about publishing.`
-        : `The highest-leverage content strategy is often hiding in work you have already finished.`;
-  const hashtags = keywords.slice(0, 4).map((word) => `#${titleCase(word).replace(/\s/g, "")}`).join(" ");
-
+function createLocalOutputs(source: string, title: string, tone: Tone, audience: string): GeneratedContent {
+  const lines = sentences(source); const terms = keywords(source);
+  const first = lines[0] ?? "Your best content deserves more than one moment of attention.";
+  const points = [lines[1], lines[2], lines[3]].filter(Boolean);
+  const topic = title || titleCase(terms.slice(0, 3).join(" ")) || "A better content workflow";
+  const hook = tone === "Bold" ? "Stop creating content that disappears after one post."
+    : tone === "Educational" ? "Here is a practical way to get more value from every idea you publish."
+      : tone === "Conversational" ? "A small content habit changed how I think about publishing."
+        : "The highest-leverage content strategy may be hiding in work you already finished.";
+  const tags = terms.slice(0, 5).map((word) => `#${titleCase(word)}`).join(" ") || "#ContentStrategy #Marketing";
+  const numbered = points.length ? points.map((point, index) => `${index + 1}. ${point}`).join("\n\n") : `1. Identify the core insight.\n\n2. Adapt it for each channel.\n\n3. Schedule distribution.`;
   return {
-    linkedin: `${hook}\n\n${first}\n\nThree ideas worth keeping:\n\n${points.map((point, index) => `${index + 1}. ${point}`).join("\n\n")}\n\nThe takeaway: create once, adapt with intention, and let strong ideas travel further.\n\nWhat is one piece of content you could give a second life this week?\n\n${hashtags || "#ContentStrategy #CreatorEconomy #Marketing"}`,
-    xThread: `1/ Your content probably does not need more ideas. It needs better distribution. 🧵\n\n2/ ${first}\n\n3/ The simple system:\n• Capture the strongest insight\n• Match it to each platform\n• Schedule it while it is relevant\n\n4/ ${points[1] ?? "Adapt the framing and rhythm instead of copying the same post everywhere."}\n\n5/ Create once. Shape with intention. Distribute with confidence.\n\nSave this for your next publishing day.`,
-    newsletter: `SUBJECT: ${topic}: the smarter way to create consistently\nPREVIEW: Turn one strong idea into a complete week of useful content.\n\nHi there,\n\n${hook}\n\n${first}\n\n${points.join("\n\n")}\n\nA simple way to put this into practice:\n\n1. Highlight the three strongest insights in your source piece.\n2. Give each insight a format that suits the channel.\n3. Change the opening and call to action for the people reading there.\n4. Put every asset on the calendar before starting something new.\n\nThe result is not more noise. It is more mileage from thinking you have already done.\n\nTry it with one article this week and notice how much lighter your content workflow feels.\n\nUntil next time,\nYour team`,
-    summary: `${topic}\n\n${first}\n\nKEY TAKEAWAYS\n${points.map((point) => `• ${point}`).join("\n")}\n\nIN ONE SENTENCE\nA repeatable repurposing system helps ${audience.toLowerCase()} turn their best ideas into channel-specific content without starting from zero every day.`,
-    instagram: `${hook}\n\nOne strong idea can become:\n\n→ a thoughtful LinkedIn post\n→ a five-part thread\n→ an email your audience saves\n→ a carousel people share\n→ a full week of content\n\nRepurposing is not repeating yourself. It is making the same valuable idea easier to discover in the format your audience already prefers.\n\nSave this for your next content planning session. ✦\n\n${hashtags || "#ContentCreator #ContentMarketing #SocialMediaTips"}`,
+    linkedin: `${hook}\n\n${first}\n\nThree ideas worth keeping:\n\n${numbered}\n\nCreate once, adapt with intention, and let strong ideas travel further.\n\nWhat could you give a second life this week?\n\n${tags}`,
+    xThread: `1/ Your content may not need more ideas. It needs better distribution.\n\n2/ ${first}\n\n3/ Capture the strongest insight.\n\n4/ Match it to the right format and platform.\n\n5/ Adapt the framing instead of copying the same post everywhere.\n\n6/ Create once. Shape with intention. Distribute with confidence.`,
+    newsletter: `SUBJECT: ${topic}: a smarter way to create consistently\nPREVIEW: Turn one strong idea into a useful week of content.\n\nHi there,\n\n${hook}\n\n${first}\n\n${points.join("\n\n")}\n\nA simple practice:\n\n1. Highlight the strongest insights.\n2. Give each insight a channel-native format.\n3. Rewrite the opening and call to action.\n4. Put every asset on the calendar.\n\nTry it with one source this week.\n\nUntil next time,\nYour team`,
+    summary: `${topic}\n\n${first}\n\nKEY TAKEAWAYS\n${points.map((point) => `- ${point}`).join("\n") || "- Capture the core idea.\n- Adapt it for each channel.\n- Schedule it consistently."}\n\nIN ONE SENTENCE\nA repeatable system helps ${audience.toLowerCase()} distribute their strongest ideas without starting from zero every day.`,
+    instagram: `${hook}\n\nOne strong idea can become a LinkedIn post, a useful thread, an email, a carousel, and a full week of conversations.\n\nRepurposing is not repeating yourself. It is making a valuable idea easier to discover in the format your audience already prefers.\n\nSave this for your next planning session.\n\n${tags}`,
   };
 }
 
@@ -127,298 +68,169 @@ function createCalendar(title: string, outputs: GeneratedContent): CalendarItem[
   const topic = title || "Your source content";
   return [
     { day: "MON", channel: "LinkedIn", format: "Authority post", idea: `The core insight from “${topic}”`, status: "Ready" },
-    { day: "TUE", channel: "X", format: "5-part thread", idea: "Break the main framework into actionable steps", status: "Ready" },
-    { day: "WED", channel: "Email", format: "Newsletter", idea: outputs.newsletter.split("\n")[0].replace("SUBJECT: ", ""), status: "Ready" },
+    { day: "TUE", channel: "X", format: "Thread", idea: "Break the main framework into actionable steps", status: "Ready" },
+    { day: "WED", channel: "Email", format: "Newsletter", idea: outputs.newsletter.split("\n")[0].replace("SUBJECT: ", "") || topic, status: "Ready" },
     { day: "THU", channel: "Instagram", format: "Carousel", idea: "Five ways to apply the central idea", status: "Draft" },
     { day: "FRI", channel: "LinkedIn", format: "Conversation", idea: "Ask the audience about their current workflow", status: "Draft" },
-    { day: "SAT", channel: "Instagram", format: "Caption", idea: "A short personal reflection and save-worthy checklist", status: "Ready" },
+    { day: "SAT", channel: "Instagram", format: "Caption", idea: "A personal reflection and save-worthy checklist", status: "Ready" },
     { day: "SUN", channel: "X", format: "Quick insight", idea: "Restate the strongest takeaway in under 280 characters", status: "Draft" },
   ];
 }
-
-function downloadText(filename: string, content: string) {
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
+function download(filename: string, content: string, type = "text/plain") {
+  const url = URL.createObjectURL(new Blob([content], { type: `${type};charset=utf-8` }));
+  const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+function monthKey() { return new Date().toISOString().slice(0, 7); }
 
 export default function Home() {
-  const [title, setTitle] = useState(sampleTitle);
-  const [source, setSource] = useState(sampleSource);
+  const [title, setTitle] = useState(sampleTitle); const [source, setSource] = useState(sampleSource);
   const [sourceType, setSourceType] = useState<"article" | "transcript">("article");
-  const [tone, setTone] = useState<Tone>("Professional");
-  const [audience, setAudience] = useState("Creators & marketers");
-  const [activeOutput, setActiveOutput] = useState<OutputKey>("linkedin");
-  const [outputs, setOutputs] = useState<GeneratedContent>(() => createOutputs(sampleSource, sampleTitle, "Professional", "Creators & marketers"));
+  const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
+  const [tone, setTone] = useState<Tone>(defaultPreferences.tone); const [audience, setAudience] = useState(defaultPreferences.audience);
+  const [outputs, setOutputs] = useState<GeneratedContent>(() => createLocalOutputs(sampleSource, sampleTitle, defaultPreferences.tone, defaultPreferences.audience));
   const [calendar, setCalendar] = useState<CalendarItem[]>(() => createCalendar(sampleTitle, outputs));
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [toast, setToast] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [projects, setProjects] = useState<Project[]>([]);
-
+  const [activeOutput, setActiveOutput] = useState<OutputKey>("linkedin"); const [activeView, setActiveView] = useState<View>("studio");
+  const [isGenerating, setIsGenerating] = useState(false); const [toast, setToast] = useState(""); const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]); const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [query, setQuery] = useState("");
+  const [generationCount, setGenerationCount] = useState(0); const [lastMode, setLastMode] = useState<"ai" | "local">("local");
   const words = useMemo(() => source.trim() ? source.trim().split(/\s+/).length : 0, [source]);
-  const readTime = Math.max(1, Math.ceil(words / 220));
-  const keywords = useMemo(() => getKeywords(source), [source]);
+  const readTime = Math.max(1, Math.ceil(words / 220)); const themes = useMemo(() => keywords(source), [source]);
+  const filteredProjects = useMemo(() => projects.filter((project) => `${project.title} ${project.source}`.toLowerCase().includes(query.toLowerCase())), [projects, query]);
+  const stats = useMemo(() => ({ projects: projects.length, assets: projects.length * 5, words: projects.reduce((sum, project) => sum + project.source.trim().split(/\s+/).filter(Boolean).length, 0), ready: projects.reduce((sum, project) => sum + project.calendar.filter((item) => item.status === "Ready").length, 0) }), [projects]);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("recast-projects");
-      if (stored) {
-        const savedProjects = JSON.parse(stored) as Project[];
-        window.setTimeout(() => setProjects(savedProjects), 0);
-      }
-    } catch {
-      localStorage.removeItem("recast-projects");
-    }
+    const timer = window.setTimeout(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem("recast-projects") || "[]") as Project[]; setProjects(saved);
+        const prefs = JSON.parse(localStorage.getItem("recast-preferences") || "null") as Preferences | null;
+        if (prefs) { setPreferences(prefs); setTone(prefs.tone); setAudience(prefs.audience); }
+        const usage = JSON.parse(localStorage.getItem("recast-usage") || "{}") as Record<string, number>; setGenerationCount(usage[monthKey()] || 0);
+      } catch { localStorage.removeItem("recast-projects"); localStorage.removeItem("recast-preferences"); }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 3000); return () => clearTimeout(timer); }, [toast]);
+  useEffect(() => {
+    function close(event: KeyboardEvent) { if (event.key === "Escape") { setSearchOpen(false); setSettingsOpen(false); } }
+    window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close);
   }, []);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(""), 2200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  function generate() {
-    if (words < 20) {
-      setToast("Add at least 20 words to generate useful content.");
-      return;
-    }
+  function persistProjects(next: Project[]) { setProjects(next); localStorage.setItem("recast-projects", JSON.stringify(next)); }
+  function countGeneration() {
+    const next = generationCount + 1; setGenerationCount(next);
+    const usage = JSON.parse(localStorage.getItem("recast-usage") || "{}") as Record<string, number>; usage[monthKey()] = next; localStorage.setItem("recast-usage", JSON.stringify(usage));
+  }
+  function newProject() {
+    setTitle(""); setSource(""); setOutputs(blankOutputs); setCalendar([]); setCurrentProjectId(null); setActiveOutput("linkedin"); setActiveView("studio"); setSidebarOpen(false); setTone(preferences.tone); setAudience(preferences.audience); setToast("New project ready.");
+  }
+  async function generate() {
+    if (words < 20) { setToast("Add at least 20 words to generate useful content."); return; }
     setIsGenerating(true);
-    window.setTimeout(() => {
-      const next = createOutputs(source, title, tone, audience);
-      setOutputs(next);
-      setCalendar(createCalendar(title, next));
-      setIsGenerating(false);
-      setToast("Five assets and a 7-day plan are ready.");
-    }, 900);
+    try {
+      if (preferences.generationMode === "auto") {
+        const response = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, source, sourceType, tone, audience }) });
+        if (response.ok) {
+          const data = await response.json() as GeneratedContent & { calendar: CalendarItem[] };
+          const next = { linkedin: data.linkedin, xThread: data.xThread, newsletter: data.newsletter, summary: data.summary, instagram: data.instagram };
+          setOutputs(next); setCalendar(data.calendar); setLastMode("ai"); countGeneration(); setToast("AI created five assets and a 7-day plan."); return;
+        }
+      }
+      const next = createLocalOutputs(source, title, tone, audience); setOutputs(next); setCalendar(createCalendar(title, next)); setLastMode("local"); countGeneration();
+      setToast(preferences.generationMode === "local" ? "Private local drafts are ready." : "AI is not configured, so private local drafts were created.");
+    } catch {
+      const next = createLocalOutputs(source, title, tone, audience); setOutputs(next); setCalendar(createCalendar(title, next)); setLastMode("local"); countGeneration(); setToast("Connection failed, so private local drafts were created.");
+    } finally { setIsGenerating(false); }
   }
-
   async function copyOutput() {
-    await navigator.clipboard.writeText(outputs[activeOutput]);
-    setToast(`${outputLabels[activeOutput].label} copied to clipboard.`);
+    const content = outputs[activeOutput]; if (!content) { setToast("Generate or write content first."); return; }
+    try { await navigator.clipboard.writeText(content); setToast(`${outputLabels[activeOutput].label} copied.`); }
+    catch { download(`${activeOutput}.txt`, content); setToast("Clipboard was unavailable, so the file was downloaded."); }
   }
-
   function saveProject() {
-    const project: Project = {
-      id: crypto.randomUUID(),
-      title: title || "Untitled source",
-      source,
-      outputs,
-      updatedAt: new Date().toISOString(),
-    };
-    const next = [project, ...projects].slice(0, 8);
-    setProjects(next);
-    localStorage.setItem("recast-projects", JSON.stringify(next));
-    setToast("Project saved on this device.");
+    if (!source.trim()) { setToast("Add source content before saving."); return; }
+    const id = currentProjectId || crypto.randomUUID();
+    const project: Project = { id, title: title.trim() || "Untitled source", source, sourceType, tone, audience, outputs, calendar, updatedAt: new Date().toISOString() };
+    const next = [project, ...projects.filter((item) => item.id !== id)].slice(0, 50); persistProjects(next); setCurrentProjectId(id); setToast(currentProjectId ? "Project updated." : "Project saved on this device.");
   }
-
   function loadProject(project: Project) {
-    setTitle(project.title);
-    setSource(project.source);
-    setOutputs(project.outputs);
-    setCalendar(createCalendar(project.title, project.outputs));
-    setSidebarOpen(false);
-    setToast("Saved project opened.");
+    setTitle(project.title); setSource(project.source); setSourceType(project.sourceType || "article"); setTone(project.tone || preferences.tone); setAudience(project.audience || preferences.audience);
+    setOutputs(project.outputs); setCalendar(project.calendar?.length ? project.calendar : createCalendar(project.title, project.outputs)); setCurrentProjectId(project.id); setActiveView("studio"); setSidebarOpen(false); setSearchOpen(false); setToast("Saved project opened.");
   }
-
-  function handleFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  function deleteProject(id: string) { persistProjects(projects.filter((project) => project.id !== id)); if (currentProjectId === id) setCurrentProjectId(null); setToast("Project deleted from this device."); }
+  async function importFile(file?: File) {
     if (!file) return;
-    file.text().then((text) => {
-      setSource(text);
-      setTitle(file.name.replace(/\.[^.]+$/, ""));
-      setToast("Text file imported.");
-    });
+    if (file.size > 1_500_000 || (!file.name.match(/\.(txt|md)$/i) && file.type && !file.type.includes("text"))) { setToast("Choose a .txt or .md file under 1.5 MB."); return; }
+    try { setSource(await file.text()); setTitle(file.name.replace(/\.[^.]+$/, "")); setToast("Text file imported."); } catch { setToast("That file could not be read."); }
   }
-
-  function handleDrop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const file = event.dataTransfer.files?.[0];
-    if (!file || !file.type.includes("text")) {
-      setToast("Drop a plain text or transcript file.");
-      return;
-    }
-    file.text().then((text) => {
-      setSource(text);
-      setTitle(file.name.replace(/\.[^.]+$/, ""));
-    });
+  function handleFile(event: ChangeEvent<HTMLInputElement>) { void importFile(event.target.files?.[0]); event.target.value = ""; }
+  function handleDrop(event: DragEvent<HTMLDivElement>) { event.preventDefault(); void importFile(event.dataTransfer.files?.[0]); }
+  function exportCalendar() {
+    if (!calendar.length) { setToast("Generate a calendar first."); return; }
+    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    download("recast-content-calendar.csv", ["Day,Channel,Format,Idea,Status", ...calendar.map((item) => [item.day, item.channel, item.format, item.idea, item.status].map(escape).join(","))].join("\n"), "text/csv"); setToast("Calendar exported as CSV.");
   }
+  function updateCalendar(index: number, update: Partial<CalendarItem>) { setCalendar((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, ...update } : item)); }
+  function savePreferences() { setPreferences({ ...preferences, tone, audience }); localStorage.setItem("recast-preferences", JSON.stringify({ ...preferences, tone, audience })); setSettingsOpen(false); setToast("Preferences saved."); }
+  function clearData() { localStorage.removeItem("recast-projects"); localStorage.removeItem("recast-usage"); setProjects([]); setGenerationCount(0); setCurrentProjectId(null); setSettingsOpen(false); setToast("Local workspace data cleared."); }
 
   const ActiveIcon = outputLabels[activeOutput].icon;
+  const nav = (view: View) => { setActiveView(view); setSidebarOpen(false); };
 
-  return (
-    <main className="app-shell">
-      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
-        <div className="brand-row">
-          <div className="brand-mark"><Sparkles size={18} strokeWidth={2.5} /></div>
-          <span>recast<span>.ai</span></span>
-          <button className="mobile-close" onClick={() => setSidebarOpen(false)} aria-label="Close navigation"><X size={20} /></button>
-        </div>
+  return <main className="app-shell">
+    <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
+      <div className="brand-row"><div className="brand-mark"><Sparkles size={18} /></div><span>recast<span>.ai</span></span><button className="mobile-close" onClick={() => setSidebarOpen(false)} aria-label="Close navigation"><X size={20} /></button></div>
+      <button className="new-project" onClick={newProject}><Plus size={18} /> New repurpose</button>
+      <nav className="main-nav" aria-label="Main navigation">
+        <button className={`nav-item ${activeView === "studio" ? "active" : ""}`} onClick={() => nav("studio")}><WandSparkles size={18} /> Repurpose</button>
+        <button className={`nav-item ${activeView === "content" ? "active" : ""}`} onClick={() => nav("content")}><LayoutGrid size={18} /> My content <span>{projects.length}</span></button>
+        <button className={`nav-item ${activeView === "calendar" ? "active" : ""}`} onClick={() => nav("calendar")}><CalendarDays size={18} /> Calendar</button>
+        <button className={`nav-item ${activeView === "performance" ? "active" : ""}`} onClick={() => nav("performance")}><BarChart3 size={18} /> Performance</button>
+      </nav>
+      <div className="recent-projects"><div className="side-label">Recent projects</div>{projects.length === 0 ? <div className="empty-projects">Saved projects appear here.</div> : projects.slice(0, 4).map((project) => <button key={project.id} onClick={() => loadProject(project)} className="project-link"><FileText size={15} /><span>{project.title}</span></button>)}</div>
+      <div className="sidebar-bottom"><div className="usage-card"><div><span>This month</span><strong>{generationCount}</strong></div><div className="usage-track"><span style={{ width: `${Math.min(100, generationCount * 5)}%` }} /></div><p>{generationCount} content suite{generationCount === 1 ? "" : "s"} generated</p></div>
+        <button className="profile-row" onClick={() => setSettingsOpen(true)}><span className="avatar">HC</span><span><strong>Hasan Creator</strong><small>Local workspace</small></span><MoreHorizontal size={18} /></button></div>
+    </aside>
+    {sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
+    <section className="workspace">
+      <header className="topbar"><div className="topbar-left"><button className="menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Menu size={21} /></button><div><strong>{activeView === "studio" ? "Repurpose studio" : activeView === "content" ? "My content" : activeView === "calendar" ? "Content calendar" : "Performance"}</strong><span>{activeView === "studio" ? "Turn one idea into a complete content system" : "Your device-local content workspace"}</span></div></div>
+        <div className="topbar-actions"><button className="icon-button" onClick={() => setSearchOpen(true)} aria-label="Search"><Search size={18} /></button><button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label="Settings"><Settings size={18} /></button>{activeView === "studio" && <button className="save-button" onClick={saveProject}><Archive size={17} /> {currentProjectId ? "Update project" : "Save project"}</button>}</div></header>
 
-        <button className="new-project" onClick={() => { setTitle(""); setSource(""); setSidebarOpen(false); }}>
-          <Plus size={18} /> New repurpose
-        </button>
+      {activeView === "studio" ? <div className="studio-grid">
+        <section className="source-column"><div className="section-intro"><div><span className="step">01</span><h1>Add your source</h1></div><p>Paste an article or transcript. Recast identifies the strongest ideas and reshapes them for each channel.</p></div>
+          <div className="source-card" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}><div className="source-tabs"><button className={sourceType === "article" ? "active" : ""} onClick={() => setSourceType("article")}><FileText size={17} /> Article</button><button className={sourceType === "transcript" ? "active" : ""} onClick={() => setSourceType("transcript")}><Video size={17} /> Video transcript</button></div>
+            <label className="field-label" htmlFor="content-title">Source title</label><input id="content-title" className="title-input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Give this project a clear title" />
+            <div className="editor-wrap"><textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder={sourceType === "article" ? "Paste your article, blog post, or notes here..." : "Paste a video, podcast, webinar, or interview transcript here..."} aria-label="Source content" /><div className="editor-footer"><label className="upload-link"><Clipboard size={15} /> Import .txt or .md<input type="file" accept=".txt,.md,text/plain,text/markdown" onChange={handleFile} /></label><span>{words.toLocaleString()} words · {readTime} min read</span></div></div>
+            <div className="insight-strip"><div><Clock3 size={16} /><span><small>Source length</small><strong>{readTime} min</strong></span></div><div><Hash size={16} /><span><small>Key themes</small><strong>{themes.slice(0, 2).join(", ") || "Waiting for source"}</strong></span></div></div></div>
+          <div className="options-card"><div className="option-group"><label>Tone of voice</label><div className="select-wrap"><select value={tone} onChange={(event) => setTone(event.target.value as Tone)}><option>Professional</option><option>Conversational</option><option>Bold</option><option>Educational</option></select><ChevronDown size={16} /></div></div><div className="option-group"><label>Primary audience</label><div className="select-wrap"><select value={audience} onChange={(event) => setAudience(event.target.value)}><option>Creators & marketers</option><option>Founders & operators</option><option>Students & educators</option><option>General audience</option></select><ChevronDown size={16} /></div></div></div>
+          <button className={`generate-button ${isGenerating ? "generating" : ""}`} onClick={generate} disabled={isGenerating}><span>{isGenerating ? <RotateCcw size={19} /> : <Sparkles size={19} />}{isGenerating ? "Repurposing your ideas..." : "Generate content suite"}</span>{!isGenerating && <ArrowRight size={19} />}</button>
+          <p className="privacy-note">Local mode stays in your browser. AI mode securely sends the source to the configured model.</p>
+        </section>
+        <section className="output-column"><div className="section-intro output-intro"><div><span className="step">02</span><h2>Your content suite</h2></div><span className={`ready-badge ${outputs.linkedin ? "" : "muted"}`}><Check size={13} /> {outputs.linkedin ? `5 assets · ${lastMode === "ai" ? "AI" : "local"}` : "Waiting for source"}</span></div>
+          <div className="output-card"><div className="output-tabs" role="tablist">{(Object.keys(outputLabels) as OutputKey[]).map((key) => { const Icon = outputLabels[key].icon; return <button role="tab" aria-selected={activeOutput === key} className={activeOutput === key ? "active" : ""} key={key} onClick={() => setActiveOutput(key)}><Icon size={16} /><span>{outputLabels[key].label}</span></button>; })}</div>
+            <div className="output-toolbar"><div><span className="platform-icon"><ActiveIcon size={17} /></span><strong>{outputLabels[activeOutput].label}</strong><em>{outputs[activeOutput].length.toLocaleString()} characters</em></div><div><button onClick={copyOutput}><Copy size={14} /> Copy</button><button onClick={() => outputs[activeOutput] ? download(`${activeOutput}.txt`, outputs[activeOutput]) : setToast("Generate or write content first.")}><Download size={14} /> Export</button></div></div>
+            <textarea className="output-editor" value={outputs[activeOutput]} onChange={(event) => setOutputs({ ...outputs, [activeOutput]: event.target.value })} placeholder="Your generated content will appear here. You can also write or edit it directly." aria-label={`${outputLabels[activeOutput].label} output`} />
+            <div className="output-quality"><span><Check size={12} /> Editable</span><span><Check size={12} /> Channel-ready</span><span><Check size={12} /> Yours to refine</span></div></div>
+          <CalendarCard calendar={calendar} update={updateCalendar} exportCalendar={exportCalendar} />
+        </section>
+      </div> : activeView === "content" ? <Library projects={filteredProjects} query={query} setQuery={setQuery} load={loadProject} remove={deleteProject} newProject={newProject} />
+        : activeView === "calendar" ? <div className="dashboard-page"><div className="page-heading"><span className="eyebrow">Publishing plan</span><h1>Content calendar</h1><p>Edit ideas, change readiness, and export the current project as CSV.</p></div>{calendar.length ? <CalendarCard calendar={calendar} update={updateCalendar} exportCalendar={exportCalendar} expanded /> : <EmptyState icon={<CalendarDays size={25} />} title="No calendar yet" copy="Generate a content suite to build your seven-day plan." action={newProject} actionLabel="Start repurposing" />}</div>
+          : <div className="dashboard-page"><div className="page-heading"><span className="eyebrow">Device-local analytics</span><h1>Performance snapshot</h1><p>These totals reflect saved work on this browser, with no invented reach or engagement data.</p></div><div className="metric-grid"><Metric label="Saved projects" value={stats.projects} /><Metric label="Content assets" value={stats.assets} /><Metric label="Words processed" value={stats.words.toLocaleString()} /><Metric label="Ready calendar items" value={stats.ready} /></div><div className="insight-panel"><h2>Workspace activity</h2><p>You generated {generationCount} suite{generationCount === 1 ? "" : "s"} this month. Save projects to include them in the totals above.</p><button className="secondary-action" onClick={() => nav("content")}>Review saved content <ArrowRight size={16} /></button></div></div>}
+    </section>
 
-        <nav className="main-nav" aria-label="Main navigation">
-          <button className="nav-item active"><WandSparkles size={18} /> Repurpose</button>
-          <button className="nav-item"><LayoutGrid size={18} /> My content <span>{projects.length}</span></button>
-          <button className="nav-item"><CalendarDays size={18} /> Calendar</button>
-          <button className="nav-item"><BarChart3 size={18} /> Performance <em>soon</em></button>
-        </nav>
-
-        <div className="recent-projects">
-          <div className="side-label">Recent projects</div>
-          {projects.length === 0 ? (
-            <div className="empty-projects">Your saved projects will appear here.</div>
-          ) : projects.slice(0, 4).map((project) => (
-            <button key={project.id} onClick={() => loadProject(project)} className="project-link">
-              <FileText size={15} />
-              <span>{project.title}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="sidebar-bottom">
-          <div className="usage-card">
-            <div><span>Monthly usage</span><strong>3 / 20</strong></div>
-            <div className="usage-track"><span /></div>
-            <p>17 generations remaining</p>
-          </div>
-          <button className="profile-row">
-            <span className="avatar">HC</span>
-            <span><strong>Hasan Creator</strong><small>Free workspace</small></span>
-            <MoreHorizontal size={18} />
-          </button>
-        </div>
-      </aside>
-
-      {sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
-
-      <section className="workspace">
-        <header className="topbar">
-          <div className="topbar-left">
-            <button className="menu-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Menu size={21} /></button>
-            <div><strong>Repurpose studio</strong><span>Turn one idea into a complete content system</span></div>
-          </div>
-          <div className="topbar-actions">
-            <button className="icon-button" aria-label="Search"><Search size={18} /></button>
-            <button className="icon-button" aria-label="Settings"><Settings size={18} /></button>
-            <button className="save-button" onClick={saveProject}><Archive size={17} /> Save project</button>
-          </div>
-        </header>
-
-        <div className="studio-grid">
-          <section className="source-column">
-            <div className="section-intro">
-              <div><span className="step">01</span><h1>Add your source</h1></div>
-              <p>Paste an article or transcript. Recast will find the strongest ideas and reshape them for every channel.</p>
-            </div>
-
-            <div className="source-card" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
-              <div className="source-tabs">
-                <button className={sourceType === "article" ? "active" : ""} onClick={() => setSourceType("article")}><FileText size={17} /> Article</button>
-                <button className={sourceType === "transcript" ? "active" : ""} onClick={() => setSourceType("transcript")}><Video size={17} /> Video transcript</button>
-              </div>
-
-              <label className="field-label" htmlFor="content-title">Source title</label>
-              <input id="content-title" className="title-input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Give this project a clear title" />
-
-              <div className="editor-wrap">
-                <textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder={sourceType === "article" ? "Paste your article, blog post, or notes here…" : "Paste a YouTube, podcast, webinar, or interview transcript here…"} aria-label="Source content" />
-                <div className="editor-footer">
-                  <label className="upload-link"><Clipboard size={15} /> Import .txt<input type="file" accept=".txt,text/plain" onChange={handleFile} /></label>
-                  <span>{words.toLocaleString()} words · {readTime} min read</span>
-                </div>
-              </div>
-
-              <div className="insight-strip">
-                <div><Clock3 size={16} /><span><small>Source length</small><strong>{readTime} min</strong></span></div>
-                <div><Hash size={16} /><span><small>Key themes</small><strong>{keywords.slice(0, 2).join(", ") || "Waiting for source"}</strong></span></div>
-              </div>
-            </div>
-
-            <div className="options-card">
-              <div className="option-group">
-                <label>Tone of voice</label>
-                <div className="select-wrap">
-                  <select value={tone} onChange={(event) => setTone(event.target.value as Tone)}>
-                    <option>Professional</option><option>Conversational</option><option>Bold</option><option>Educational</option>
-                  </select><ChevronDown size={16} />
-                </div>
-              </div>
-              <div className="option-group">
-                <label>Primary audience</label>
-                <div className="select-wrap">
-                  <select value={audience} onChange={(event) => setAudience(event.target.value)}>
-                    <option>Creators & marketers</option><option>Founders & operators</option><option>Students & educators</option><option>General audience</option>
-                  </select><ChevronDown size={16} />
-                </div>
-              </div>
-            </div>
-
-            <button className={`generate-button ${isGenerating ? "generating" : ""}`} onClick={generate} disabled={isGenerating}>
-              <span>{isGenerating ? <RotateCcw size={19} /> : <Sparkles size={19} />}{isGenerating ? "Repurposing your ideas…" : "Generate content suite"}</span>
-              {!isGenerating && <ArrowRight size={19} />}
-            </button>
-            <p className="privacy-note">Your source stays in this browser and is never uploaded.</p>
-          </section>
-
-          <section className="output-column">
-            <div className="section-intro output-intro">
-              <div><span className="step">02</span><h2>Your content suite</h2></div>
-              <span className="ready-badge"><Check size={13} /> 5 assets ready</span>
-            </div>
-
-            <div className="output-card">
-              <div className="output-tabs" role="tablist">
-                {(Object.keys(outputLabels) as OutputKey[]).map((key) => {
-                  const ItemIcon = outputLabels[key].icon;
-                  return <button role="tab" aria-selected={activeOutput === key} className={activeOutput === key ? "active" : ""} key={key} onClick={() => setActiveOutput(key)}><ItemIcon size={16} /><span>{outputLabels[key].label}</span></button>;
-                })}
-              </div>
-
-              <div className="output-toolbar">
-                <div><span className="platform-icon"><ActiveIcon size={17} /></span><strong>{outputLabels[activeOutput].label}</strong><em>{outputs[activeOutput].length} characters</em></div>
-                <div>
-                  <button onClick={copyOutput} aria-label="Copy content"><Copy size={16} /> Copy</button>
-                  <button onClick={() => downloadText(`${activeOutput}.txt`, outputs[activeOutput])} aria-label="Download content"><Download size={16} /></button>
-                </div>
-              </div>
-
-              <textarea className="output-editor" value={outputs[activeOutput]} onChange={(event) => setOutputs({ ...outputs, [activeOutput]: event.target.value })} aria-label={`Edit ${outputLabels[activeOutput].label} content`} />
-
-              <div className="output-quality">
-                <span><Check size={14} /> Channel-ready</span>
-                <span><Check size={14} /> Tone matched</span>
-                <span><Check size={14} /> Editable</span>
-              </div>
-            </div>
-
-            <div className="calendar-card">
-              <div className="calendar-head">
-                <div><span className="calendar-icon"><CalendarDays size={18} /></span><span><strong>7-day content plan</strong><small>One source, a full week of distribution</small></span></div>
-                <button onClick={() => downloadText("content-calendar.txt", calendar.map((item) => `${item.day} — ${item.channel}: ${item.idea}`).join("\n"))}><Download size={16} /> Export</button>
-              </div>
-              <div className="calendar-list">
-                {calendar.map((item, index) => (
-                  <div className="calendar-row" key={`${item.day}-${index}`}>
-                    <span className="day-chip">{item.day}</span>
-                    <span className={`channel-dot channel-${item.channel.toLowerCase()}`} />
-                    <span className="calendar-copy"><strong>{item.idea}</strong><small>{item.channel} · {item.format}</small></span>
-                    <span className={`status ${item.status.toLowerCase()}`}>{item.status}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        </div>
-      </section>
-
-      {toast && <div className="toast"><Check size={16} /> {toast}</div>}
-    </main>
-  );
+    {searchOpen && <Modal title="Search your content" close={() => setSearchOpen(false)}><div className="modal-search"><Search size={17} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles and source text" /></div><div className="search-results">{filteredProjects.length ? filteredProjects.map((project) => <button key={project.id} onClick={() => loadProject(project)}><FileText size={16} /><span><strong>{project.title}</strong><small>Updated {new Date(project.updatedAt).toLocaleDateString()}</small></span><ArrowRight size={15} /></button>) : <p>No saved projects match your search.</p>}</div></Modal>}
+    {settingsOpen && <Modal title="Workspace settings" close={() => setSettingsOpen(false)}><div className="settings-stack"><label>Default tone<select value={tone} onChange={(event) => setTone(event.target.value as Tone)}><option>Professional</option><option>Conversational</option><option>Bold</option><option>Educational</option></select></label><label>Default audience<select value={audience} onChange={(event) => setAudience(event.target.value)}><option>Creators & marketers</option><option>Founders & operators</option><option>Students & educators</option><option>General audience</option></select></label><label>Generation mode<select value={preferences.generationMode} onChange={(event) => setPreferences({ ...preferences, generationMode: event.target.value as Preferences["generationMode"] })}><option value="auto">AI when configured, local fallback</option><option value="local">Always use private local drafts</option></select></label><p>AI credentials are stored only on the server. Saved projects remain on this device.</p><div className="modal-actions"><button className="danger-button" onClick={clearData}><Trash2 size={15} /> Clear local data</button><button className="save-button" onClick={savePreferences}>Save settings</button></div></div></Modal>}
+    {toast && <div className="toast" role="status"><Check size={15} /> {toast}</div>}
+  </main>;
 }
+
+function CalendarCard({ calendar, update, exportCalendar, expanded = false }: { calendar: CalendarItem[]; update: (index: number, update: Partial<CalendarItem>) => void; exportCalendar: () => void; expanded?: boolean }) {
+  return <div className={`calendar-card ${expanded ? "calendar-expanded" : ""}`}><div className="calendar-head"><div><span className="calendar-icon"><CalendarDays size={17} /></span><span><strong>7-day content calendar</strong><small>Click a status or edit any idea</small></span></div><button onClick={exportCalendar}><Download size={14} /> Export CSV</button></div><div className="calendar-list">{calendar.length ? calendar.map((item, index) => <div className="calendar-row" key={`${item.day}-${index}`}><span className="day-chip">{item.day}</span><span className={`channel-dot channel-${item.channel.toLowerCase()}`} /><div className="calendar-copy"><input value={item.idea} onChange={(event) => update(index, { idea: event.target.value })} aria-label={`${item.day} content idea`} /><small>{item.channel} · {item.format}</small></div><button className={`status ${item.status.toLowerCase()}`} onClick={() => update(index, { status: item.status === "Ready" ? "Draft" : "Ready" })}>{item.status}</button></div>) : <div className="calendar-empty">Generate a suite to create your publishing plan.</div>}</div></div>;
+}
+function Library({ projects, query, setQuery, load, remove, newProject }: { projects: Project[]; query: string; setQuery: (value: string) => void; load: (project: Project) => void; remove: (id: string) => void; newProject: () => void }) {
+  return <div className="dashboard-page"><div className="page-heading page-heading-row"><div><span className="eyebrow">Local library</span><h1>My content</h1><p>Open, update, or remove projects saved in this browser.</p></div><button className="save-button" onClick={newProject}><Plus size={16} /> New project</button></div><div className="library-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search saved content" /></div>{projects.length ? <div className="project-grid">{projects.map((project) => <article className="project-card" key={project.id}><div className="project-card-icon"><FileText size={20} /></div><span className="project-date">{new Date(project.updatedAt).toLocaleDateString()}</span><h2>{project.title}</h2><p>{project.source.slice(0, 140)}{project.source.length > 140 ? "..." : ""}</p><div><button className="secondary-action" onClick={() => load(project)}>Open project <ArrowRight size={15} /></button><button className="delete-icon" onClick={() => remove(project.id)} aria-label={`Delete ${project.title}`}><Trash2 size={16} /></button></div></article>)}</div> : <EmptyState icon={<LayoutGrid size={25} />} title="No saved content" copy={query ? "No projects match your search." : "Save a repurposing project and it will appear here."} action={newProject} actionLabel="Create a project" />}</div>;
+}
+function Modal({ title, close, children }: { title: string; close: () => void; children: React.ReactNode }) { return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><section className="modal" role="dialog" aria-modal="true" aria-label={title}><header><h2>{title}</h2><button onClick={close} aria-label="Close"><X size={19} /></button></header>{children}</section></div>; }
+function Metric({ label, value }: { label: string; value: string | number }) { return <div className="metric-card"><span>{label}</span><strong>{value}</strong></div>; }
+function EmptyState({ icon, title, copy, action, actionLabel }: { icon: React.ReactNode; title: string; copy: string; action: () => void; actionLabel: string }) { return <div className="empty-state"><span>{icon}</span><h2>{title}</h2><p>{copy}</p><button className="secondary-action" onClick={action}>{actionLabel} <ArrowRight size={15} /></button></div>; }
