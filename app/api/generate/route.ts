@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 type Tone = "Professional" | "Conversational" | "Bold" | "Educational";
 
@@ -55,10 +56,11 @@ function outputText(payload: unknown) {
 
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  if (process.env.NEXT_PUBLIC_DEMO_MODE !== "false" || !apiKey || !process.env.AI_ACCESS_CODE) {
     return NextResponse.json({ error: "AI generation is not configured." }, { status: 503 });
   }
 
+  if(request.headers.get("authorization") !== `Bearer ${process.env.AI_ACCESS_CODE}`) return NextResponse.json({error:"Enter the AI access code in Workspace settings."},{status:401});
   let input: { title?: unknown; source?: unknown; tone?: unknown; audience?: unknown; sourceType?: unknown };
   try {
     input = await request.json();
@@ -84,7 +86,7 @@ export async function POST(request: Request) {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
+        model: process.env.OPENAI_MODEL || "gpt-5-mini",
         reasoning: { effort: "low" },
         max_output_tokens: 5000,
         input: [
@@ -102,8 +104,7 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
-      const detail = await response.text();
-      console.error("OpenAI generation failed", response.status, detail.slice(0, 500));
+      console.error("OpenAI generation failed", response.status);
       return NextResponse.json({ error: "The AI service could not complete this request." }, { status: 502 });
     }
 

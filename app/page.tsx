@@ -6,6 +6,9 @@ import {
   MessageCircle, MoreHorizontal, Plus, RotateCcw, Search, Settings, Sparkles, Trash2,
   WandSparkles, X, Video,
 } from "lucide-react";
+import { createLocalOutputs, csvCell } from "@/lib/drafting";
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE !== "false";
+
 import { ChangeEvent, DragEvent, useEffect, useMemo, useState } from "react";
 
 type OutputKey = "linkedin" | "xThread" | "newsletter" | "summary" | "instagram";
@@ -31,39 +34,14 @@ const outputLabels: Record<OutputKey, { label: string; icon: typeof BriefcaseBus
   linkedin: { label: "LinkedIn", icon: BriefcaseBusiness }, xThread: { label: "X thread", icon: MessageCircle },
   newsletter: { label: "Newsletter", icon: Mail }, summary: { label: "Summary", icon: FileText }, instagram: { label: "Instagram", icon: Image },
 };
-const defaultPreferences: Preferences = { tone: "Professional", audience: "Creators & marketers", generationMode: "auto" };
+const defaultPreferences: Preferences = { tone: "Professional", audience: "Creators & marketers", generationMode: DEMO_MODE ? "local" : "auto" };
 
-function sentences(text: string) {
-  return text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).map((item) => item.trim()).filter((item) => item.length > 28);
-}
 function keywords(text: string) {
   const counts = new Map<string, number>();
   text.toLowerCase().replace(/[^a-z0-9\s-]/g, "").split(/\s+/).filter((word) => word.length > 4 && !stopWords.has(word))
     .forEach((word) => counts.set(word, (counts.get(word) ?? 0) + 1));
   return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([word]) => word);
 }
-function titleCase(value: string) { return value.replace(/\b\w/g, (letter) => letter.toUpperCase()); }
-
-function createLocalOutputs(source: string, title: string, tone: Tone, audience: string): GeneratedContent {
-  const lines = sentences(source); const terms = keywords(source);
-  const first = lines[0] ?? "Your best content deserves more than one moment of attention.";
-  const points = [lines[1], lines[2], lines[3]].filter(Boolean);
-  const topic = title || titleCase(terms.slice(0, 3).join(" ")) || "A better content workflow";
-  const hook = tone === "Bold" ? "Stop creating content that disappears after one post."
-    : tone === "Educational" ? "Here is a practical way to get more value from every idea you publish."
-      : tone === "Conversational" ? "A small content habit changed how I think about publishing."
-        : "The highest-leverage content strategy may be hiding in work you already finished.";
-  const tags = terms.slice(0, 5).map((word) => `#${titleCase(word)}`).join(" ") || "#ContentStrategy #Marketing";
-  const numbered = points.length ? points.map((point, index) => `${index + 1}. ${point}`).join("\n\n") : `1. Identify the core insight.\n\n2. Adapt it for each channel.\n\n3. Schedule distribution.`;
-  return {
-    linkedin: `${hook}\n\n${first}\n\nThree ideas worth keeping:\n\n${numbered}\n\nCreate once, adapt with intention, and let strong ideas travel further.\n\nWhat could you give a second life this week?\n\n${tags}`,
-    xThread: `1/ Your content may not need more ideas. It needs better distribution.\n\n2/ ${first}\n\n3/ Capture the strongest insight.\n\n4/ Match it to the right format and platform.\n\n5/ Adapt the framing instead of copying the same post everywhere.\n\n6/ Create once. Shape with intention. Distribute with confidence.`,
-    newsletter: `SUBJECT: ${topic}: a smarter way to create consistently\nPREVIEW: Turn one strong idea into a useful week of content.\n\nHi there,\n\n${hook}\n\n${first}\n\n${points.join("\n\n")}\n\nA simple practice:\n\n1. Highlight the strongest insights.\n2. Give each insight a channel-native format.\n3. Rewrite the opening and call to action.\n4. Put every asset on the calendar.\n\nTry it with one source this week.\n\nUntil next time,\nYour team`,
-    summary: `${topic}\n\n${first}\n\nKEY TAKEAWAYS\n${points.map((point) => `- ${point}`).join("\n") || "- Capture the core idea.\n- Adapt it for each channel.\n- Schedule it consistently."}\n\nIN ONE SENTENCE\nA repeatable system helps ${audience.toLowerCase()} distribute their strongest ideas without starting from zero every day.`,
-    instagram: `${hook}\n\nOne strong idea can become a LinkedIn post, a useful thread, an email, a carousel, and a full week of conversations.\n\nRepurposing is not repeating yourself. It is making a valuable idea easier to discover in the format your audience already prefers.\n\nSave this for your next planning session.\n\n${tags}`,
-  };
-}
-
 function createCalendar(title: string, outputs: GeneratedContent): CalendarItem[] {
   const topic = title || "Your source content";
   return [
@@ -84,6 +62,7 @@ function download(filename: string, content: string, type = "text/plain") {
 function monthKey() { return new Date().toISOString().slice(0, 7); }
 
 export default function Home() {
+  const [accessCode, setAccessCode] = useState("");
   const [title, setTitle] = useState(sampleTitle); const [source, setSource] = useState(sampleSource);
   const [sourceType, setSourceType] = useState<"article" | "transcript">("article");
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
@@ -103,11 +82,11 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
-        const saved = JSON.parse(localStorage.getItem("recast-projects") || "[]") as Project[]; setProjects(saved);
+        const saved = JSON.parse(localStorage.getItem("recast-projects") || "[]") as Project[]; setProjects(Array.isArray(saved)?saved.filter(p=>p&&typeof p.title==="string"&&typeof p.source==="string"&&p.outputs&&Array.isArray(p.calendar)):[]);
         const prefs = JSON.parse(localStorage.getItem("recast-preferences") || "null") as Preferences | null;
         if (prefs) { setPreferences(prefs); setTone(prefs.tone); setAudience(prefs.audience); }
         const usage = JSON.parse(localStorage.getItem("recast-usage") || "{}") as Record<string, number>; setGenerationCount(usage[monthKey()] || 0);
-      } catch { localStorage.removeItem("recast-projects"); localStorage.removeItem("recast-preferences"); }
+      } catch { setToast("Saved data could not be loaded. Existing data has been preserved."); }
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -117,20 +96,21 @@ export default function Home() {
     window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close);
   }, []);
 
-  function persistProjects(next: Project[]) { setProjects(next); localStorage.setItem("recast-projects", JSON.stringify(next)); }
+  function persistProjects(next: Project[]) { try { localStorage.setItem("recast-projects", JSON.stringify(next)); setProjects(next); return true; } catch { setToast("Storage is full or unavailable. Export your draft before closing."); return false; } }
   function countGeneration() {
     const next = generationCount + 1; setGenerationCount(next);
-    const usage = JSON.parse(localStorage.getItem("recast-usage") || "{}") as Record<string, number>; usage[monthKey()] = next; localStorage.setItem("recast-usage", JSON.stringify(usage));
+    try { const usage = JSON.parse(localStorage.getItem("recast-usage") || "{}") as Record<string, number>; usage[monthKey()] = next; localStorage.setItem("recast-usage", JSON.stringify(usage)); } catch { /* Drafting still works without activity persistence. */ }
   }
   function newProject() {
     setTitle(""); setSource(""); setOutputs(blankOutputs); setCalendar([]); setCurrentProjectId(null); setActiveOutput("linkedin"); setActiveView("studio"); setSidebarOpen(false); setTone(preferences.tone); setAudience(preferences.audience); setToast("New project ready.");
   }
   async function generate() {
+    if (source.length > 60000) { setToast("Keep the source under 60,000 characters."); return; }
     if (words < 20) { setToast("Add at least 20 words to generate useful content."); return; }
     setIsGenerating(true);
     try {
-      if (preferences.generationMode === "auto") {
-        const response = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, source, sourceType, tone, audience }) });
+      if (!DEMO_MODE && preferences.generationMode === "auto") {
+        const response = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessCode}` }, body: JSON.stringify({ title, source, sourceType, tone, audience }) });
         if (response.ok) {
           const data = await response.json() as GeneratedContent & { calendar: CalendarItem[] };
           const next = { linkedin: data.linkedin, xThread: data.xThread, newsletter: data.newsletter, summary: data.summary, instagram: data.instagram };
@@ -138,7 +118,7 @@ export default function Home() {
         }
       }
       const next = createLocalOutputs(source, title, tone, audience); setOutputs(next); setCalendar(createCalendar(title, next)); setLastMode("local"); countGeneration();
-      setToast(preferences.generationMode === "local" ? "Private local drafts are ready." : "AI is not configured, so private local drafts were created.");
+      setToast(preferences.generationMode === "local" ? "Private local drafts are ready." : "AI is unavailable or disabled; source-based local drafts were created.");
     } catch {
       const next = createLocalOutputs(source, title, tone, audience); setOutputs(next); setCalendar(createCalendar(title, next)); setLastMode("local"); countGeneration(); setToast("Connection failed, so private local drafts were created.");
     } finally { setIsGenerating(false); }
@@ -152,13 +132,14 @@ export default function Home() {
     if (!source.trim()) { setToast("Add source content before saving."); return; }
     const id = currentProjectId || crypto.randomUUID();
     const project: Project = { id, title: title.trim() || "Untitled source", source, sourceType, tone, audience, outputs, calendar, updatedAt: new Date().toISOString() };
-    const next = [project, ...projects.filter((item) => item.id !== id)].slice(0, 50); persistProjects(next); setCurrentProjectId(id); setToast(currentProjectId ? "Project updated." : "Project saved on this device.");
+    if (!currentProjectId && projects.length >= 50) { setToast("Library full: remove a saved project before adding another."); return; }
+    const next = [project, ...projects.filter((item) => item.id !== id)]; if(!persistProjects(next))return; setCurrentProjectId(id); setToast(currentProjectId ? "Project updated." : "Project saved on this device.");
   }
   function loadProject(project: Project) {
     setTitle(project.title); setSource(project.source); setSourceType(project.sourceType || "article"); setTone(project.tone || preferences.tone); setAudience(project.audience || preferences.audience);
     setOutputs(project.outputs); setCalendar(project.calendar?.length ? project.calendar : createCalendar(project.title, project.outputs)); setCurrentProjectId(project.id); setActiveView("studio"); setSidebarOpen(false); setSearchOpen(false); setToast("Saved project opened.");
   }
-  function deleteProject(id: string) { persistProjects(projects.filter((project) => project.id !== id)); if (currentProjectId === id) setCurrentProjectId(null); setToast("Project deleted from this device."); }
+  function deleteProject(id: string) { if(!confirm("Delete this saved project?"))return;if(!persistProjects(projects.filter((project) => project.id !== id)))return; if (currentProjectId === id) setCurrentProjectId(null); setToast("Project deleted from this device."); }
   async function importFile(file?: File) {
     if (!file) return;
     if (file.size > 1_500_000 || (!file.name.match(/\.(txt|md)$/i) && file.type && !file.type.includes("text"))) { setToast("Choose a .txt or .md file under 1.5 MB."); return; }
@@ -168,12 +149,12 @@ export default function Home() {
   function handleDrop(event: DragEvent<HTMLDivElement>) { event.preventDefault(); void importFile(event.dataTransfer.files?.[0]); }
   function exportCalendar() {
     if (!calendar.length) { setToast("Generate a calendar first."); return; }
-    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const escape = csvCell;
     download("recast-content-calendar.csv", ["Day,Channel,Format,Idea,Status", ...calendar.map((item) => [item.day, item.channel, item.format, item.idea, item.status].map(escape).join(","))].join("\n"), "text/csv"); setToast("Calendar exported as CSV.");
   }
   function updateCalendar(index: number, update: Partial<CalendarItem>) { setCalendar((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, ...update } : item)); }
   function savePreferences() { setPreferences({ ...preferences, tone, audience }); localStorage.setItem("recast-preferences", JSON.stringify({ ...preferences, tone, audience })); setSettingsOpen(false); setToast("Preferences saved."); }
-  function clearData() { localStorage.removeItem("recast-projects"); localStorage.removeItem("recast-usage"); setProjects([]); setGenerationCount(0); setCurrentProjectId(null); setSettingsOpen(false); setToast("Local workspace data cleared."); }
+  function clearData() { if(!confirm("Clear all projects and activity saved in this browser?"))return; localStorage.removeItem("recast-projects"); localStorage.removeItem("recast-usage"); setProjects([]); setGenerationCount(0); setCurrentProjectId(null); setSettingsOpen(false); setToast("Local workspace data cleared."); }
 
   const ActiveIcon = outputLabels[activeOutput].icon;
   const nav = (view: View) => { setActiveView(view); setSidebarOpen(false); };
@@ -205,13 +186,13 @@ export default function Home() {
             <div className="insight-strip"><div><Clock3 size={16} /><span><small>Source length</small><strong>{readTime} min</strong></span></div><div><Hash size={16} /><span><small>Key themes</small><strong>{themes.slice(0, 2).join(", ") || "Waiting for source"}</strong></span></div></div></div>
           <div className="options-card"><div className="option-group"><label>Tone of voice</label><div className="select-wrap"><select value={tone} onChange={(event) => setTone(event.target.value as Tone)}><option>Professional</option><option>Conversational</option><option>Bold</option><option>Educational</option></select><ChevronDown size={16} /></div></div><div className="option-group"><label>Primary audience</label><div className="select-wrap"><select value={audience} onChange={(event) => setAudience(event.target.value)}><option>Creators & marketers</option><option>Founders & operators</option><option>Students & educators</option><option>General audience</option></select><ChevronDown size={16} /></div></div></div>
           <button className={`generate-button ${isGenerating ? "generating" : ""}`} onClick={generate} disabled={isGenerating}><span>{isGenerating ? <RotateCcw size={19} /> : <Sparkles size={19} />}{isGenerating ? "Repurposing your ideas..." : "Generate content suite"}</span>{!isGenerating && <ArrowRight size={19} />}</button>
-          <p className="privacy-note">Local mode stays in your browser. AI mode securely sends the source to the configured model.</p>
+          <p className="privacy-note">{DEMO_MODE?"Portfolio demo: source-based draft templates, editable outputs and browser-saved projects. No AI key needed.":"Local mode stays in your browser. AI mode sends your source to the configured model."}</p>
         </section>
         <section className="output-column"><div className="section-intro output-intro"><div><span className="step">02</span><h2>Your content suite</h2></div><span className={`ready-badge ${outputs.linkedin ? "" : "muted"}`}><Check size={13} /> {outputs.linkedin ? `5 assets · ${lastMode === "ai" ? "AI" : "local"}` : "Waiting for source"}</span></div>
           <div className="output-card"><div className="output-tabs" role="tablist">{(Object.keys(outputLabels) as OutputKey[]).map((key) => { const Icon = outputLabels[key].icon; return <button role="tab" aria-selected={activeOutput === key} className={activeOutput === key ? "active" : ""} key={key} onClick={() => setActiveOutput(key)}><Icon size={16} /><span>{outputLabels[key].label}</span></button>; })}</div>
             <div className="output-toolbar"><div><span className="platform-icon"><ActiveIcon size={17} /></span><strong>{outputLabels[activeOutput].label}</strong><em>{outputs[activeOutput].length.toLocaleString()} characters</em></div><div><button onClick={copyOutput}><Copy size={14} /> Copy</button><button onClick={() => outputs[activeOutput] ? download(`${activeOutput}.txt`, outputs[activeOutput]) : setToast("Generate or write content first.")}><Download size={14} /> Export</button></div></div>
             <textarea className="output-editor" value={outputs[activeOutput]} onChange={(event) => setOutputs({ ...outputs, [activeOutput]: event.target.value })} placeholder="Your generated content will appear here. You can also write or edit it directly." aria-label={`${outputLabels[activeOutput].label} output`} />
-            <div className="output-quality"><span><Check size={12} /> Editable</span><span><Check size={12} /> Channel-ready</span><span><Check size={12} /> Yours to refine</span></div></div>
+            <div className="output-quality"><span><Check size={12} /> Editable</span><span><Check size={12} /> Review before publishing</span><span><Check size={12} /> Yours to refine</span></div></div>
           <CalendarCard calendar={calendar} update={updateCalendar} exportCalendar={exportCalendar} />
         </section>
       </div> : activeView === "content" ? <Library projects={filteredProjects} query={query} setQuery={setQuery} load={loadProject} remove={deleteProject} newProject={newProject} />
@@ -220,7 +201,7 @@ export default function Home() {
     </section>
 
     {searchOpen && <Modal title="Search your content" close={() => setSearchOpen(false)}><div className="modal-search"><Search size={17} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search titles and source text" /></div><div className="search-results">{filteredProjects.length ? filteredProjects.map((project) => <button key={project.id} onClick={() => loadProject(project)}><FileText size={16} /><span><strong>{project.title}</strong><small>Updated {new Date(project.updatedAt).toLocaleDateString()}</small></span><ArrowRight size={15} /></button>) : <p>No saved projects match your search.</p>}</div></Modal>}
-    {settingsOpen && <Modal title="Workspace settings" close={() => setSettingsOpen(false)}><div className="settings-stack"><label>Default tone<select value={tone} onChange={(event) => setTone(event.target.value as Tone)}><option>Professional</option><option>Conversational</option><option>Bold</option><option>Educational</option></select></label><label>Default audience<select value={audience} onChange={(event) => setAudience(event.target.value)}><option>Creators & marketers</option><option>Founders & operators</option><option>Students & educators</option><option>General audience</option></select></label><label>Generation mode<select value={preferences.generationMode} onChange={(event) => setPreferences({ ...preferences, generationMode: event.target.value as Preferences["generationMode"] })}><option value="auto">AI when configured, local fallback</option><option value="local">Always use private local drafts</option></select></label><p>AI credentials are stored only on the server. Saved projects remain on this device.</p><div className="modal-actions"><button className="danger-button" onClick={clearData}><Trash2 size={15} /> Clear local data</button><button className="save-button" onClick={savePreferences}>Save settings</button></div></div></Modal>}
+    {settingsOpen && <Modal title="Workspace settings" close={() => setSettingsOpen(false)}><div className="settings-stack"><label>Default tone<select value={tone} onChange={(event) => setTone(event.target.value as Tone)}><option>Professional</option><option>Conversational</option><option>Bold</option><option>Educational</option></select></label><label>Default audience<select value={audience} onChange={(event) => setAudience(event.target.value)}><option>Creators & marketers</option><option>Founders & operators</option><option>Students & educators</option><option>General audience</option></select></label><label>Generation mode<select value={preferences.generationMode} onChange={(event) => setPreferences({ ...preferences, generationMode: event.target.value as Preferences["generationMode"] })}>{!DEMO_MODE&&<option value="auto">AI when configured, local fallback</option>}<option value="local">Always use private local drafts</option></select></label>{!DEMO_MODE&&<label>AI access code<input type="password" autoComplete="off" value={accessCode} onChange={e=>setAccessCode(e.target.value)}/></label>}<p>AI credentials are stored only on the server. Saved projects remain on this device.</p><div className="modal-actions"><button className="danger-button" onClick={clearData}><Trash2 size={15} /> Clear local data</button><button className="save-button" onClick={savePreferences}>Save settings</button></div></div></Modal>}
     {toast && <div className="toast" role="status"><Check size={15} /> {toast}</div>}
   </main>;
 }
