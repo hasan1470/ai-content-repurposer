@@ -1,5 +1,7 @@
 # Recast AI · Content Repurposing Studio
 
+**[Open the live demo →](https://ai-content-repurposer-orcin.vercel.app)**
+
 Turn an article or transcript into five editable drafts and a seven-day publishing plan. The public portfolio is a working, account-free demo: paste your own source, edit the results, save a project, and export your work.
 
 ![Recast workspace](public/og-v2.png)
